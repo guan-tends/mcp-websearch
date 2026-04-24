@@ -6,7 +6,7 @@ authors = ["Freeman & Guan"]
 description = "MCP WebSearch server - DuckDuckGo Lite scraping tool"
 license = "MIT"
 repository = "https://github.com/freeman/mcp-websearch"
-rust-version = "1.75"
+rust-version = "1.85"
 
 [[bin]]
 name = "mcp-websearch"
@@ -19,8 +19,8 @@ rmcp = { version = "0.16", features = ["server", "macros"] }
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
-# HTTP client
-reqwest = { version = "0.12", features = ["json"] }
+# HTTP client (rustls = pure Rust TLS, no OpenSSL dependency)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # HTML parsing (regex-based, per spec)
 regex = "1"
