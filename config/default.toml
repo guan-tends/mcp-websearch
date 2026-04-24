@@ -1,0 +1,23 @@
+# MCP WebSearch Server Configuration
+
+[transport]
+# Transport mode: "stdio" or "http"
+mode = "stdio"
+
+[transport.http]
+host = "127.0.0.1"
+port = 3000
+
+[ddg]
+# Request timeout in seconds
+timeout = 15
+# Maximum search results
+max_results = 5
+# User-Agent header
+user_agent = "Mozilla/5.0 (compatible; Kai-MCP/1.0)"
+
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"
+# Log format: "json" or "pretty"
+format = "json"
