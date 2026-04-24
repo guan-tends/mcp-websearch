@@ -27,6 +27,7 @@ regex = "1"
 
 # URL encoding/decoding
 percent-encoding = "2"
+url = "2"
 
 # Configuration
 figment = { version = "0.10", features = ["toml", "env"] }
