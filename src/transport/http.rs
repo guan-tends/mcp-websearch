@@ -4,12 +4,12 @@
 
 use crate::config::Config;
 use crate::tools::WebSearchTool;
-use rmcp::serve_server;
 use tokio::net::TcpListener;
 
 /// Serve the web search tool over HTTP
-pub async fn serve(handler: WebSearchTool, config: Config) -> anyhow::Result<()> {
-    let addr = config.http_addr();
+pub async fn serve(_handler: WebSearchTool, config: Config) -> anyhow::Result<()> {
+    let addr = config.http_addr()
+        .ok_or_else(|| anyhow::anyhow!("HTTP transport requires http config"))?;
     let listener = TcpListener::bind(&addr).await?;
     
     tracing::info!("HTTP server listening on {}", addr);

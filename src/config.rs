@@ -53,7 +53,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TransportConfig {
     pub mode: String,
-    pub http: HttpConfig,
+    pub http: Option<HttpConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -83,7 +83,7 @@ impl Config {
     /// 4. defaults.toml (lowest priority)
     pub fn load(args: &CliArgs) -> anyhow::Result<Self> {
         let mut figment = Figment::new()
-            .merge(Toml::file("config/default.toml"))
+            .merge(Toml::file("/home/guan/src/mcp-websearch/config/default.toml"))
             .merge(Env::prefixed("MCP_"));
 
         // Merge user-specified config file if provided
@@ -110,8 +110,9 @@ impl Config {
     }
 
     /// Get HTTP address as a string
-    pub fn http_addr(&self) -> String {
-        format!("{}:{}", self.transport.http.host, self.transport.http.port)
+    /// Get HTTP address as a string
+    pub fn http_addr(&self) -> Option<String> {
+        self.transport.http.as_ref().map(|h| format!("{}:{}", h.host, h.port))
     }
 }
 
@@ -120,10 +121,10 @@ impl Default for Config {
         Self {
             transport: TransportConfig {
                 mode: "stdio".to_string(),
-                http: HttpConfig {
+                http: Some(HttpConfig {
                     host: "127.0.0.1".to_string(),
                     port: 3000,
-                },
+                }),
             },
             ddg: DdgConfig {
                 timeout: 15,
