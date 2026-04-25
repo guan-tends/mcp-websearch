@@ -10,7 +10,7 @@ use regex::Regex;
 pub const MAX_RESULTS: usize = 5;
 
 /// Regex patterns (exact from Kotlin WebSearchTool.kt)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DdgRegex {
     /// `<a[^>]+class=['"]result-link['"][^>]*>([\s\S]*?)</a>`
     pub link_regex: Regex,
@@ -40,7 +40,7 @@ impl Default for DdgRegex {
 }
 
 /// Single search result
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct SearchResult {
     pub title: String,
     pub url: String,
@@ -250,13 +250,13 @@ trait Trim {
 
 impl Trim for str {
     fn trim(&self) -> String {
-        self.trim().to_string()
+        self[..].trim().to_string()
     }
 }
 
 impl Trim for String {
     fn trim(&self) -> String {
-        self.trim().to_string()
+        self[..].trim().to_string()
     }
 }
 

@@ -8,10 +8,12 @@ use crate::{
     ddg::{DdgClient, SearchResult},
 };
 use rmcp::{
+    ErrorData as McpError,
     handler::server::wrapper::Parameters,
-    model::CallToolResult,
+    handler::server::router::tool::ToolRouter,
+    model::{CallToolResult, Content},
     schemars::{self, JsonSchema},
-    tool, tool_router,
+    tool, tool_router, tool_handler, ServerHandler,
 };
 use serde::Serialize;
 
@@ -19,13 +21,15 @@ use serde::Serialize;
 #[derive(Clone)]
 pub struct WebSearchTool {
     client: DdgClient,
+    tool_router: ToolRouter<Self>,
 }
 
 impl WebSearchTool {
     /// Create a new WebSearch tool with the given DDG configuration
     pub fn new(config: DdgConfig) -> anyhow::Result<Self> {
         let client = DdgClient::new(config)?;
-        Ok(Self { client })
+        let tool_router = Self::tool_router();
+        Ok(Self { client, tool_router })
     }
 }
 
@@ -48,7 +52,7 @@ struct WebSearchResponse {
     error: Option<String>,
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl WebSearchTool {
     /// Search the web for current information
     /// 
@@ -57,59 +61,27 @@ impl WebSearchTool {
         name = "web_search",
         description = "Search the web for current information. Returns titles, URLs, and snippets. Before answering questions about recent events, news, current prices, weather, or anything time-sensitive, search first. Also use this when you're unsure about facts or the user asks you to look something up."
     )]
-    async fn search(
-        &self,
-        Parameters(params): Parameters<WebSearchParams>,
-    ) -> CallToolResult {
+    async fn search(&self, Parameters(params): Parameters<WebSearchParams>) -> Result<CallToolResult, McpError> {
         // Validate query
         if params.query.trim().is_empty() {
-            let response = WebSearchResponse {
-                success: false,
-                results: None,
-                message: None,
-                error: Some("Query is required".to_string()),
-            };
-            return CallToolResult {
-                content: vec![rmcp::model::Content::text(
-                    serde_json::to_string(&response).unwrap_or_default()
-                )],
-                is_error: true,
-                ..Default::default()
-            };
+            return Err(McpError::invalid_request("Search query is required", None));
         }
 
-        // Perform search
+        // Execute search
         match self.client.search(&params.query).await {
             Ok(results) => {
-                if results.is_empty() {
-                    let response = WebSearchResponse {
-                        success: true,
-                        results: Some(vec![]),
-                        message: Some("No results found".to_string()),
-                        error: None,
-                    };
-                    CallToolResult {
-                        content: vec![rmcp::model::Content::text(
-                            serde_json::to_string(&response).unwrap_or_default()
-                        )],
-                        is_error: false,
-                        ..Default::default()
-                    }
-                } else {
-                    let response = WebSearchResponse {
-                        success: true,
-                        results: Some(results),
-                        message: None,
-                        error: None,
-                    };
-                    CallToolResult {
-                        content: vec![rmcp::model::Content::text(
-                            serde_json::to_string(&response).unwrap_or_default()
-                        )],
-                        is_error: false,
-                        ..Default::default()
-                    }
-                }
+                let response = WebSearchResponse {
+                    success: true,
+                    results: Some(results.clone()),
+                    message: Some(format!("Found {} results", results.len())),
+                    error: None,
+                };
+                
+                Ok(CallToolResult::success(vec![
+                    Content::text(serde_json::to_string(&response).map_err(|e| {
+                        McpError::internal_error(format!("Failed to serialize response: {}", e), None)
+                    })?)
+                ]))
             }
             Err(e) => {
                 let response = WebSearchResponse {
@@ -118,14 +90,16 @@ impl WebSearchTool {
                     message: None,
                     error: Some(format!("Search failed: {}", e)),
                 };
-                CallToolResult {
-                    content: vec![rmcp::model::Content::text(
-                        serde_json::to_string(&response).unwrap_or_default()
-                    )],
-                    is_error: true,
-                    ..Default::default()
-                }
+                
+                Ok(CallToolResult::error(vec![
+                    Content::text(serde_json::to_string(&response).map_err(|e| {
+                        McpError::internal_error(format!("Failed to serialize error response: {}", e), None)
+                    })?)
+                ]))
             }
         }
     }
 }
+
+#[tool_handler]
+impl ServerHandler for WebSearchTool {}

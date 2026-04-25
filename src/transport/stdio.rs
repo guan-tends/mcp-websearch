@@ -1,36 +1,17 @@
-//! Stdio transport for MCP WebSearch server
-//! 
-//! Uses stdin/stdout for MCP protocol messages
-//! Logs go to stderr
+//! StdIO Transport
+//!
+//! Provides stdio-based MCP transport for local tool integration
 
 use crate::config::Config;
+use crate::tools::WebSearchTool;
 use rmcp::{
-    ServiceExt,
-    transport::stdio::stdio,
+    serve_server,
+    transport::io::stdio,
 };
-use tokio::io::{stdin, stdout};
-use tracing::info;
 
-/// Run the MCP server with stdio transport
-pub async fn run_stdio_server<H>(handler: H, config: &Config) -> anyhow::Result<()>
-where
-    H: rmcp::ServerHandler + Send + Sync + 'static,
-{
-    info!("Starting MCP WebSearch server on stdio transport");
-    info!("DDG timeout: {}s, max_results: {}", 
-        config.ddg.timeout, config.ddg.max_results);
-
-    // Create stdio transport (uses stdin/stdout)
-    let transport = (stdin(), stdout());
-    
-    // Serve the handler
-    let server = handler.serve(transport).await?;
-    
-    info!("MCP server initialized, waiting for requests...");
-    
-    // Wait for server to complete
-    let _quit_reason = server.waiting().await?;
-    
-    info!("MCP server shutting down");
+/// Serve the web search tool over stdio
+pub async fn serve(handler: WebSearchTool, _config: Config) -> anyhow::Result<()> {
+    let (stdin, stdout) = stdio();
+    serve_server(handler, (stdin, stdout)).await?;
     Ok(())
 }

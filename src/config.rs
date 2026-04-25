@@ -35,7 +35,7 @@ pub struct CliArgs {
     pub log_level: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum, PartialEq)]
 pub enum TransportMode {
     #[default]
     Stdio,
