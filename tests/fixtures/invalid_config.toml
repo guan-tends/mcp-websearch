@@ -1,0 +1,6 @@
+[transport]
+mode = "invalid_mode"
+
+[ddg]
+timeout = "not_a_number"
+max_results = -1
