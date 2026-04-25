@@ -4,4 +4,4 @@ pub mod client;
 pub mod parser;
 
 pub use client::DdgClient;
-pub use parser::{SearchResult, DdgRegex, MAX_RESULTS};
+pub use parser::{DdgRegex, MAX_RESULTS, SearchResult};

@@ -2,7 +2,7 @@
 
 use crate::{
     config::DdgConfig,
-    ddg::parser::{encode_url_query_component, parse_results, DdgRegex, SearchResult},
+    ddg::parser::{DdgRegex, SearchResult, encode_url_query_component, parse_results},
     error::WebSearchError,
 };
 use reqwest::Client;
@@ -32,19 +32,19 @@ impl DdgClient {
     }
 
     /// Search DuckDuckGo Lite for the given query
-    /// 
+    ///
     /// Returns up to MAX_RESULTS (5) search results
     pub async fn search(&self, query: &str) -> Result<Vec<SearchResult>, WebSearchError> {
         let encoded = encode_url_query_component(query);
         let url = format!("https://lite.duckduckgo.com/lite/?q={}", encoded);
 
         let response = self.http_client.get(&url).send().await?;
-        
+
         // Check for non-200 status
         if !response.status().is_success() {
-            return Err(WebSearchError::Http(
-                reqwest::Error::from(response.error_for_status().unwrap_err())
-            ));
+            return Err(WebSearchError::Http(reqwest::Error::from(
+                response.error_for_status().unwrap_err(),
+            )));
         }
 
         let html = response.text().await?;
@@ -65,7 +65,7 @@ mod tests {
             max_results: 5,
             user_agent: "Test".to_string(),
         };
-        
+
         let client = DdgClient::new(config);
         assert!(client.is_ok());
     }

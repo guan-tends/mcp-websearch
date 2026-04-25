@@ -83,7 +83,9 @@ impl Config {
     /// 4. defaults.toml (lowest priority)
     pub fn load(args: &CliArgs) -> anyhow::Result<Self> {
         let mut figment = Figment::new()
-            .merge(Toml::file("/home/guan/src/mcp-websearch/config/default.toml"))
+            .merge(Toml::file(
+                "/home/guan/src/mcp-websearch/config/default.toml",
+            ))
             .merge(Env::prefixed("MCP_"));
 
         // Merge user-specified config file if provided
@@ -112,7 +114,10 @@ impl Config {
     /// Get HTTP address as a string
     /// Get HTTP address as a string
     pub fn http_addr(&self) -> Option<String> {
-        self.transport.http.as_ref().map(|h| format!("{}:{}", h.host, h.port))
+        self.transport
+            .http
+            .as_ref()
+            .map(|h| format!("{}:{}", h.host, h.port))
     }
 }
 

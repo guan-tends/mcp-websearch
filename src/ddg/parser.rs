@@ -1,5 +1,5 @@
 //! DuckDuckGo HTML parser
-//! 
+//!
 //! Ported from Kotlin WebSearchTool with exact regex patterns
 //! UTF-8 decoding bug FIXED: accumulates bytes before UTF-8 decode
 
@@ -29,9 +29,13 @@ pub struct DdgRegex {
 impl Default for DdgRegex {
     fn default() -> Self {
         Self {
-            link_regex: Regex::new(r#"<a[^>]+class=['"]result-link['"][^>]*>([\s\S]*?)</a>"#).unwrap(),
+            link_regex: Regex::new(r#"<a[^>]+class=['"]result-link['"][^>]*>([\s\S]*?)</a>"#)
+                .unwrap(),
             href_regex: Regex::new(r#"href=['"]([^'"]*?)['"]"#).unwrap(),
-            snippet_regex: Regex::new(r#"<td[^>]+class=['"]result-snippet['"][^>]*>([\s\S]*?)</td>"#).unwrap(),
+            snippet_regex: Regex::new(
+                r#"<td[^>]+class=['"]result-snippet['"][^>]*>([\s\S]*?)</td>"#,
+            )
+            .unwrap(),
             full_link_regex: Regex::new(r#"<a\s[^>]*class=['"]result-link['"][^>]*>"#).unwrap(),
             uddg_regex: Regex::new(r#"uddg=([^&]+)"#).unwrap(),
             html_tag_regex: Regex::new(r#"<[^>]*>"#).unwrap(),
@@ -48,7 +52,7 @@ pub struct SearchResult {
 }
 
 /// Parse DDG Lite HTML into structured results
-/// 
+///
 /// Algorithm ported exactly from Kotlin:
 /// 1. Find all link tags, links, and snippets via regex
 /// 2. Iterate by index alignment
@@ -123,11 +127,11 @@ pub fn parse_results(html: &str, regex: &DdgRegex) -> Result<Vec<SearchResult>, 
 }
 
 /// Extract actual URL from DDG redirect wrapper
-/// 
+///
 /// DDG format: `//duckduckgo.com/l/?uddg=ENCODED_URL`
 fn extract_url_from_redirect(href: &str) -> Result<String, ParseError> {
     let regex = DdgRegex::default();
-    
+
     // Try to extract uddg parameter
     if let Some(cap) = regex.uddg_regex.captures(href) {
         if let Some(encoded) = cap.get(1) {
@@ -145,7 +149,7 @@ fn extract_url_from_redirect(href: &str) -> Result<String, ParseError> {
 }
 
 /// **FIXED** URL decoder with proper UTF-8 handling
-/// 
+///
 /// Kotlin original had bug: decoded each %XX byte individually as char
 /// This version: accumulates bytes, then UTF-8 decodes
 pub fn decode_url_component(encoded: &str) -> Result<String, ParseError> {
@@ -158,11 +162,11 @@ pub fn decode_url_component(encoded: &str) -> Result<String, ParseError> {
                 // Read two hex digits
                 let hex1 = chars.next().ok_or(ParseError::IncompletePercent)?;
                 let hex2 = chars.next().ok_or(ParseError::IncompletePercent)?;
-                
+
                 let hex_str = format!("{}{}", hex1, hex2);
                 let byte = u8::from_str_radix(&hex_str, 16)
                     .map_err(|_| ParseError::InvalidHex(hex_str))?;
-                
+
                 bytes.push(byte);
             }
             '+' => {
@@ -183,7 +187,7 @@ pub fn decode_url_component(encoded: &str) -> Result<String, ParseError> {
 /// Encode URL query component (RFC 3986 + space->+)
 pub fn encode_url_query_component(query: &str) -> String {
     let mut result = String::with_capacity(query.len() * 3);
-    
+
     for c in query.chars() {
         match c {
             // RFC 3986 unreserved characters
@@ -205,12 +209,12 @@ pub fn encode_url_query_component(query: &str) -> String {
             }
         }
     }
-    
+
     result
 }
 
 /// Strip HTML tags and decode common entities
-/// 
+///
 /// Ported from Kotlin: 7 specific entity replacements
 trait StripHtml {
     fn strip_html(&self) -> String;
@@ -219,10 +223,10 @@ trait StripHtml {
 impl StripHtml for str {
     fn strip_html(&self) -> String {
         let regex = DdgRegex::default();
-        
+
         // Remove all HTML tags
         let no_tags = regex.html_tag_regex.replace_all(self, "");
-        
+
         // Replace 7 specific entities (in order, like Kotlin)
         let result = no_tags
             .replace("&amp;", "&")
@@ -232,7 +236,7 @@ impl StripHtml for str {
             .replace("&#x27;", "'")
             .replace("&#39;", "'")
             .replace("&nbsp;", " ");
-        
+
         result
     }
 }
@@ -276,10 +280,7 @@ mod tests {
 
     #[test]
     fn test_decode_url_simple() {
-        assert_eq!(
-            decode_url_component("hello+world").unwrap(),
-            "hello world"
-        );
+        assert_eq!(decode_url_component("hello+world").unwrap(), "hello world");
     }
 
     #[test]
@@ -294,27 +295,18 @@ mod tests {
     fn test_decode_url_utf8() {
         // This is the UTF-8 fix test!
         // café in UTF-8: 0xC3 0xA9
-        assert_eq!(
-            decode_url_component("caf%C3%A9").unwrap(),
-            "café"
-        );
+        assert_eq!(decode_url_component("caf%C3%A9").unwrap(), "café");
     }
 
     #[test]
     fn test_decode_url_chinese() {
         // Test multi-byte UTF-8
-        assert_eq!(
-            decode_url_component("%E4%B8%AD%E6%96%87").unwrap(),
-            "中文"
-        );
+        assert_eq!(decode_url_component("%E4%B8%AD%E6%96%87").unwrap(), "中文");
     }
 
     #[test]
     fn test_strip_html() {
-        assert_eq!(
-            "<p>Hello &amp; World</p>".strip_html(),
-            "Hello & World"
-        );
+        assert_eq!("<p>Hello &amp; World</p>".strip_html(), "Hello & World");
     }
 
     #[test]
