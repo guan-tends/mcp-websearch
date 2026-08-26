@@ -2,11 +2,15 @@
 name = "mcp-websearch"
 version = "1.0.0"
 edition = "2024"
-authors = ["Freeman & Guan"]
-description = "MCP WebSearch server - DuckDuckGo Lite scraping tool"
+authors = ["David Newman & Guan"]
+description = "MCP WebSearch server — DuckDuckGo Lite search tool for the Model Context Protocol"
 license = "MIT"
-repository = "https://github.com/freeman/mcp-websearch"
+repository = "https://github.com/guan-tends/mcp-websearch"
 rust-version = "1.85"
+
+[lib]
+name = "mcp_websearch"
+path = "src/lib.rs"
 
 [[bin]]
 name = "mcp-websearch"
@@ -46,7 +50,20 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+[[test]]
+name = "unit"
+path = "tests/unit/mod.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration/mod.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/mod.rs"
+
 [dev-dependencies]
 tokio-test = "0.4"
 wiremock = "0.6"
 pretty_assertions = "1"
+tempfile = "3"

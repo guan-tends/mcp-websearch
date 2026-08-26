@@ -2,11 +2,10 @@
 //!
 //! Tests Figment integration: file loading, env vars, CLI precedence
 
-use mcp_websearch::config::{Config, CliArgs, TransportMode};
-use std::env;
+use mcp_websearch::config::{CliArgs, Config, TransportMode};
+use std::io::Write;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
-use std::io::Write;
 
 /// Helper to create a temp config file
 fn create_config_file(content: &str) -> NamedTempFile {
@@ -38,7 +37,7 @@ format = "json"
 
     let temp_file = create_config_file(config_content);
     let args = CliArgs {
-        transport: TransportMode::Stdio,
+        transport: TransportMode::Http,
         config: Some(temp_file.path().to_path_buf()),
         host: None,
         port: None,
@@ -46,7 +45,7 @@ format = "json"
     };
 
     let config = Config::load(&args).unwrap();
-    
+
     assert_eq!(config.transport.mode, "http");
     assert_eq!(config.transport.http.as_ref().unwrap().host, "127.0.0.1");
     assert_eq!(config.transport.http.as_ref().unwrap().port, 8080);
@@ -69,7 +68,7 @@ fn test_missing_config_file_uses_defaults() {
 
     // Should succeed with defaults
     let config = Config::load(&args).unwrap();
-    
+
     // Uses default.toml values
     assert!(!config.transport.mode.is_empty());
 }
@@ -77,11 +76,14 @@ fn test_missing_config_file_uses_defaults() {
 /// Test: CLI transport argument overrides file
 #[test]
 fn test_cli_transport_overrides_file() {
-    let config_content = r#"[transport]\nmode = \"http\""#;
+    let config_content = r#"
+[transport]
+mode = "http"
+"#;
     let temp_file = create_config_file(config_content);
-    
+
     let args = CliArgs {
-        transport: TransportMode::Stdio, // CLI says stdio
+        transport: TransportMode::Stdio,              // CLI says stdio
         config: Some(temp_file.path().to_path_buf()), // File says http
         host: None,
         port: None,
@@ -101,7 +103,7 @@ host = "127.0.0.1"
 port = 3000
 "#;
     let temp_file = create_config_file(config_content);
-    
+
     let args = CliArgs {
         transport: TransportMode::Http,
         config: Some(temp_file.path().to_path_buf()),
@@ -127,7 +129,7 @@ fn test_http_addr_none_when_no_http_config() {
         log_level: None,
     };
 
-    let config = Config::load(&args).unwrap();
+    let _config = Config::load(&args).unwrap();
     // http is None when mode is stdio
 }
 
@@ -140,7 +142,7 @@ host = "192.168.1.1"
 port = 9000
 "#;
     let temp_file = create_config_file(config_content);
-    
+
     let args = CliArgs {
         transport: TransportMode::Http,
         config: Some(temp_file.path().to_path_buf()),
@@ -158,7 +160,7 @@ port = 9000
 #[test]
 fn test_default_impl() {
     let default = Config::default();
-    
+
     assert_eq!(default.transport.mode, "stdio");
     assert!(default.transport.http.is_some());
     assert_eq!(default.transport.http.as_ref().unwrap().host, "127.0.0.1");
@@ -180,7 +182,7 @@ max_results = 20
 user_agent = "CustomAgent/2.0"
 "#;
     let temp_file = create_config_file(config_content);
-    
+
     let args = CliArgs {
         transport: TransportMode::Stdio,
         config: Some(temp_file.path().to_path_buf()),
@@ -204,7 +206,7 @@ level = "trace"
 format = "pretty"
 "#;
     let temp_file = create_config_file(config_content);
-    
+
     let args = CliArgs {
         transport: TransportMode::Stdio,
         config: Some(temp_file.path().to_path_buf()),
@@ -216,4 +218,91 @@ format = "pretty"
     let config = Config::load(&args).unwrap();
     assert_eq!(config.logging.level, "trace");
     assert_eq!(config.logging.format, "pretty");
+}
+
+/// Test: base_url can be overridden via config file (T13)
+#[test]
+fn test_base_url_override_from_config() {
+    let config_content = r#"
+[ddg]
+timeout = 15
+max_results = 5
+user_agent = "Test/1.0"
+base_url = "http://mock-server.example.com/lite/"
+"#;
+    let temp_file = create_config_file(config_content);
+
+    let args = CliArgs {
+        transport: TransportMode::Stdio,
+        config: Some(temp_file.path().to_path_buf()),
+        host: None,
+        port: None,
+        log_level: None,
+    };
+
+    let config = Config::load(&args).unwrap();
+    assert_eq!(
+        config.ddg.base_url, "http://mock-server.example.com/lite/",
+        "base_url should be overridden by config file"
+    );
+}
+
+/// Test: base_url defaults when not specified (T13)
+#[test]
+fn test_base_url_defaults_when_absent() {
+    let config_content = r#"
+[ddg]
+timeout = 15
+max_results = 5
+user_agent = "Test/1.0"
+"#;
+    let temp_file = create_config_file(config_content);
+
+    let args = CliArgs {
+        transport: TransportMode::Stdio,
+        config: Some(temp_file.path().to_path_buf()),
+        host: None,
+        port: None,
+        log_level: None,
+    };
+
+    let config = Config::load(&args).unwrap();
+    assert_eq!(
+        config.ddg.base_url, "https://lite.duckduckgo.com/lite/",
+        "base_url should default to DuckDuckGo Lite when not specified"
+    );
+}
+
+/// Test: max_results override flows through to parse_results (T14)
+#[test]
+fn test_max_results_override_through_parser() {
+    use mcp_websearch::ddg::parser::{DdgRegex, MAX_RESULTS, parse_results};
+
+    // Build HTML with 10 results
+    let mut html = String::from("<html><body><table>");
+    for i in 0..10 {
+        html.push_str(&format!(
+            r#"<tr><td class="result-link"><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample{}.com" class="result-link">Title {}</a></td></tr><tr><td class="result-snippet">Snippet {}</td></tr>"#,
+            i, i, i
+        ));
+    }
+    html.push_str("</table></body></html>");
+
+    let regex = DdgRegex::default();
+
+    // With max_results=3, should get exactly 3
+    let results = parse_results(&html, &regex, 3).unwrap();
+    assert_eq!(results.len(), 3, "max_results=3 should limit to 3 results");
+
+    // With max_results=7, should get exactly 7
+    let results = parse_results(&html, &regex, 7).unwrap();
+    assert_eq!(results.len(), 7, "max_results=7 should limit to 7 results");
+
+    // With max_results=MAX_RESULTS (5), should get 5
+    let results = parse_results(&html, &regex, MAX_RESULTS).unwrap();
+    assert_eq!(
+        results.len(),
+        MAX_RESULTS,
+        "max_results=MAX_RESULTS should limit to 5"
+    );
 }

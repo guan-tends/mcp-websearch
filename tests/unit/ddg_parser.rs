@@ -2,8 +2,8 @@
 //!
 //! URL encoding/decoding, HTML parsing, edge cases
 
-use mcp_websearch::ddg::parser::*;
 use mcp_websearch::ddg::SearchResult;
+use mcp_websearch::ddg::parser::*;
 
 // ==================== URL ENCODING TESTS ====================
 
@@ -74,10 +74,7 @@ fn test_decode_url_utf8_multibyte() {
 
 #[test]
 fn test_decode_url_chinese() {
-    assert_eq!(
-        decode_url_component("%E4%B8%AD%E6%96%87").unwrap(),
-        "中文"
-    );
+    assert_eq!(decode_url_component("%E4%B8%AD%E6%96%87").unwrap(), "中文");
 }
 
 #[test]
@@ -118,7 +115,8 @@ fn test_strip_html_with_entities() {
 #[test]
 fn test_strip_html_all_entities() {
     let html = "&amp;&lt;&gt;&quot;&#x27;&#39;&nbsp;";
-    assert_eq!(html.strip_html(), "&<>\"' ' ");
+    // &amp;→& &lt;→< &gt;→> &quot;→" &#x27;→' &#39;→' &nbsp;→(space)
+    assert_eq!(html.strip_html(), "&<>\"'' ");
 }
 
 #[test]
@@ -182,10 +180,10 @@ fn test_extract_url_with_query_params() {
 fn test_parse_results_from_fixture() {
     let html = crate::support::load_fixture("ddg_response.html");
     let regex = DdgRegex::default();
-    let results = parse_results(&html, &regex).unwrap();
-    
+    let results = parse_results(&html, &regex, MAX_RESULTS).unwrap();
+
     assert!(!results.is_empty(), "Should parse results from fixture");
-    
+
     // Check first result
     let first = &results[0];
     assert_eq!(first.title, "Rust Programming Language");
@@ -197,7 +195,7 @@ fn test_parse_results_from_fixture() {
 fn test_parse_results_empty_html() {
     let html = "<html><body></body></html>";
     let regex = DdgRegex::default();
-    let results = parse_results(html, &regex).unwrap();
+    let results = parse_results(html, &regex, MAX_RESULTS).unwrap();
     assert!(results.is_empty());
 }
 
@@ -212,10 +210,10 @@ fn test_parse_results_max_limit() {
         ));
     }
     html.push_str("</table></body></html>");
-    
+
     let regex = DdgRegex::default();
-    let results = parse_results(&html, &regex).unwrap();
-    
+    let results = parse_results(&html, &regex, MAX_RESULTS).unwrap();
+
     assert_eq!(results.len(), MAX_RESULTS, "Should limit to MAX_RESULTS");
 }
 
@@ -227,10 +225,10 @@ fn test_parse_results_preserves_order() {
         <tr><td class="result-link"><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fsecond.com" class="result-link">Second</a></td></tr>
         <tr><td class="result-snippet">Second snippet</td></tr>
     </table></body></html>"#;
-    
+
     let regex = DdgRegex::default();
-    let results = parse_results(html, &regex).unwrap();
-    
+    let results = parse_results(html, &regex, MAX_RESULTS).unwrap();
+
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].title, "First");
     assert_eq!(results[0].url, "https://first.com");
@@ -287,6 +285,3 @@ fn test_search_result_clone() {
     let cloned = original.clone();
     assert_eq!(original, cloned);
 }
-
-// Import support module
-use crate::support;

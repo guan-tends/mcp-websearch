@@ -1,27 +1,46 @@
-//! Unit tests for DDG Client module
+//! Unit tests for DDG Client module.
 //!
-//! HTTP client with mocked responses via wiremock
+//! Mock tests use wiremock with a configurable `base_url`.
+//! Network tests (hitting real DuckDuckGo) are marked `#[ignore]` — run with:
+//!
+//! ```sh
+//! cargo test -- --ignored
+//! ```
 
+use mcp_websearch::config::DdgConfig;
 use mcp_websearch::ddg::DdgClient;
-use mcp_websearch::ddg::parser::DdgConfig;
-use mcp_websearch::ddg::SearchResult;
-use wiremock::{MockServer, Mock, ResponseTemplate};
-use wiremock::matchers::{method, path_regex};
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
+};
 
-/// Create test DDG config
-fn test_config() -> DdgConfig {
+/// Create a DDG config pointing at a mock server.
+fn mock_config(base_url: String) -> DdgConfig {
     DdgConfig {
         timeout: 15,
         max_results: 5,
         user_agent: "Test/1.0".to_string(),
+        base_url,
     }
 }
 
-/// Sample DDG HTML response
-fn sample_html_response() -> &'static str {
+/// Create a DDG config pointing at the real DuckDuckGo (for `#[ignore]` tests).
+fn real_config() -> DdgConfig {
+    DdgConfig {
+        timeout: 15,
+        max_results: 5,
+        user_agent: "Test/1.0".to_string(),
+        base_url: "https://lite.duckduckgo.com/lite/".to_string(),
+    }
+}
+
+/// Sample DDG HTML response with 3 results.
+fn sample_html() -> &'static str {
     r#"<html><body><table>
-        <tr><td class="result-link"><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com" class="result-link">Example Site</a></td></tr>
-        <tr><td class="result-snippet">This is an example site description.</td></tr>
+    <tr><td class="result-link"><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com" class="result-link">Example Site</a></td></tr>
+    <tr><td class="result-snippet">This is an example site description.</td></tr>
+    <tr><td class="result-link"><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Ftest.com" class="result-link">Test Site</a></td></tr>
+    <tr><td class="result-snippet">Another test description.</td></tr>
     </table></body></html>"#
 }
 
@@ -29,184 +48,212 @@ fn sample_html_response() -> &'static str {
 
 #[tokio::test]
 async fn test_client_creation_succeeds() {
-    let config = test_config();
+    let config = real_config();
     let result = DdgClient::new(config);
     assert!(result.is_ok());
 }
 
 #[tokio::test]
-async fn test_client_creation_with_custom_config() {
+async fn test_client_creation_with_custom_timeout() {
     let config = DdgConfig {
         timeout: 30,
         max_results: 10,
         user_agent: "CustomAgent/2.0".to_string(),
+        base_url: "https://lite.duckduckgo.com/lite/".to_string(),
+    };
+    let client = DdgClient::new(config);
+    assert!(client.is_ok());
+}
+
+// ==================== MOCKED SEARCH TESTS ====================
+
+#[tokio::test]
+async fn test_mocked_search_returns_results() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/lite/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sample_html())
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    let config = mock_config(format!("{}/lite/", server.uri()));
+    let client = DdgClient::new(config).unwrap();
+
+    let results = client.search("test query").await.unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].title, "Example Site");
+    assert_eq!(results[0].url, "https://example.com");
+    assert!(results[0].snippet.contains("example"));
+}
+
+#[tokio::test]
+async fn test_mocked_search_respects_max_results() {
+    let server = MockServer::start().await;
+
+    // Build HTML with 10 results
+    let mut html = String::from("<html><body><table>");
+    for i in 0..10 {
+        html.push_str(&format!(
+            r#"<tr><td class="result-link"><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample{}.com" class="result-link">Title {}</a></td></tr><tr><td class="result-snippet">Snippet {}</td></tr>"#,
+            i, i, i
+        ));
+    }
+    html.push_str("</table></body></html>");
+
+    Mock::given(method("GET"))
+        .and(path("/lite/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(html)
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    let config = DdgConfig {
+        max_results: 3,
+        ..mock_config(format!("{}/lite/", server.uri()))
     };
     let client = DdgClient::new(config).unwrap();
-    // Client created successfully
-}
 
-// ==================== SEARCH SUCCESS TESTS ====================
-
-#[tokio::test]
-async fn test_search_returns_results() {
-    let config = test_config();
-    let client = DdgClient::new(config).unwrap();
-    
-    // Note: This test uses real DDG - consider using wiremock for CI
-    let results = client.search("rust programming").await.unwrap();
-    
-    assert!(!results.is_empty(), "Should return search results");
-    
-    // Verify result structure
-    for result in &results {
-        assert!(!result.title.is_empty(), "Title should not be empty");
-        assert!(!result.url.is_empty(), "URL should not be empty");
-        // URL should be extracted from DDG redirect
-        assert!(!result.url.contains("duckduckgo.com"), "URL should be actual target");
-    }
+    let results = client.search("test").await.unwrap();
+    assert_eq!(results.len(), 3, "Should limit to max_results=3");
 }
 
 #[tokio::test]
-async fn test_search_result_count_limited() {
-    let mut config = test_config();
-    config.max_results = 3;
-    let client = DdgClient::new(config).unwrap();
-    
-    // Note: Real DDG test - max_results limits after parsing
-    let results = client.search("rust").await.unwrap();
-    
-    // Parser limits to MAX_RESULTS (5) regardless of config
-    assert!(results.len() <= 5, "Should not exceed MAX_RESULTS");
-}
-
-// ==================== MOCKED HTTP TESTS ====================
-
-/// Helper to mock DDG server for testing
-async fn mock_ddg_server(html_response: &'static str) -> MockServer {
+async fn test_mocked_404_returns_error() {
     let server = MockServer::start().await;
-    
-    Mock::given(method("GET"))
-        .and(path_regex("/lite/.*"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_string(html_response)
-            .insert_header("content-type", "text/html"))
-        .mount(&server)
-        .await;
-    
-    server
-}
 
-// Note: The following tests require modifying the client to accept a custom base URL
-// or using a different testing approach. For now, they document expected behavior.
-
-#[tokio::test]
-async fn test_mocked_search_parses_html() {
-    // This test shows how to test with wiremock once DDG base URL is configurable
-    let server = MockServer::start().await;
-    
     Mock::given(method("GET"))
-        .and(path_regex("/lite/.*"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_string(sample_html_response())
-            .insert_header("content-type", "text/html"))
-        .mount(&server)
-        .await;
-    
-    // Would test with configurable base URL
-    // For now, this demonstrates the mocking setup
-}
-
-#[tokio::test]
-async fn test_mocked_404_response() {
-    let server = MockServer::start().await;
-    
-    Mock::given(method("GET"))
-        .and(path_regex("/lite/.*"))
+        .and(path("/lite/"))
         .respond_with(ResponseTemplate::new(404))
         .mount(&server)
         .await;
-    
-    // Would test error handling with configurable base URL
+
+    let config = mock_config(format!("{}/lite/", server.uri()));
+    let client = DdgClient::new(config).unwrap();
+
+    let result = client.search("test").await;
+    assert!(result.is_err(), "404 should return error");
 }
 
 #[tokio::test]
-async fn test_mocked_500_response() {
+async fn test_mocked_500_returns_error() {
     let server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
-        .and(path_regex("/lite/.*"))
+        .and(path("/lite/"))
         .respond_with(ResponseTemplate::new(500))
         .mount(&server)
         .await;
-    
-    // Would test error handling with configurable base URL
+
+    let config = mock_config(format!("{}/lite/", server.uri()));
+    let client = DdgClient::new(config).unwrap();
+
+    let result = client.search("test").await;
+    assert!(result.is_err(), "500 should return error");
 }
 
 #[tokio::test]
-async fn test_mocked_empty_response() {
+async fn test_mocked_empty_html_returns_no_results() {
     let server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
-        .and(path_regex("/lite/.*"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_string("<html><body><table></table></body></html>")
-            .insert_header("content-type", "text/html"))
+        .and(path("/lite/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("<html><body><table></table></body></html>")
+                .insert_header("content-type", "text/html"),
+        )
         .mount(&server)
         .await;
-    
-    // Would test empty results with configurable base URL
-}
 
-// ==================== ERROR HANDLING TESTS ====================
-
-#[tokio::test]
-async fn test_search_with_empty_query() {
-    let config = test_config();
+    let config = mock_config(format!("{}/lite/", server.uri()));
     let client = DdgClient::new(config).unwrap();
-    
-    // Empty query should still work (DDG returns results for empty query)
-    let results = client.search("").await;
-    // Should not panic - behavior depends on DDG response
-}
 
-#[tokio::test]
-async fn test_search_with_special_chars() {
-    let config = test_config();
-    let client = DdgClient::new(config).unwrap();
-    
-    // Special characters should be URL encoded properly
-    let results = client.search("C++ programming").await;
-    assert!(results.is_ok());
-}
-
-#[tokio::test]
-async fn test_search_with_unicode() {
-    let config = test_config();
-    let client = DdgClient::new(config).unwrap();
-    
-    // Unicode should be properly encoded
-    let results = client.search("café").await;
-    assert!(results.is_ok());
-}
-
-// ==================== INTEGRATION WITH PARSER TESTS ====================
-
-#[tokio::test]
-async fn test_search_delegates_to_parser() {
-    // Verifies that search() correctly delegates to parse_results
-    let config = test_config();
-    let client = DdgClient::new(config).unwrap();
-    
-    // Real search - verifies parser integration works
     let results = client.search("test").await.unwrap();
-    
-    // All results should have proper structure from parser
+    assert!(results.is_empty(), "Empty HTML should return no results");
+}
+
+#[tokio::test]
+async fn test_mocked_search_encodes_query_in_url() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/lite/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("<html><body><table></table></body></html>")
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    let config = mock_config(format!("{}/lite/", server.uri()));
+    let client = DdgClient::new(config).unwrap();
+
+    // Query with spaces and special chars — should not error
+    let result = client.search("café C++ test").await;
+    assert!(result.is_ok(), "Special characters should be URL-encoded");
+}
+
+// ==================== NETWORK TESTS (real DuckDuckGo) ====================
+//
+// These tests hit the real DuckDuckGo API and are excluded from CI.
+// Run manually with: cargo test -- --ignored
+//
+
+/// Network test — run with: cargo test -- --ignored
+#[tokio::test]
+#[ignore = "hits real DuckDuckGo API"]
+async fn test_real_search_returns_results() {
+    let client = DdgClient::new(real_config()).unwrap();
+    let results = client.search("rust programming").await.unwrap();
+
+    assert!(!results.is_empty(), "Should return search results");
     for result in &results {
-        // Verify URL was extracted from DDG redirect
+        assert!(!result.title.is_empty());
+        assert!(!result.url.is_empty());
         assert!(
-            result.url.starts_with("http://") || result.url.starts_with("https://"),
-            "URL should be extracted: {}",
-            result.url
+            !result.url.contains("duckduckgo.com"),
+            "URL should be actual target, not DDG redirect"
         );
     }
+}
+
+/// Network test — run with: cargo test -- --ignored
+#[tokio::test]
+#[ignore = "hits real DuckDuckGo API"]
+async fn test_real_search_unicode() {
+    let client = DdgClient::new(real_config()).unwrap();
+    let results = client.search("café").await;
+    assert!(results.is_ok(), "Unicode query should succeed");
+}
+
+/// Network test — run with: cargo test -- --ignored
+#[tokio::test]
+#[ignore = "hits real DuckDuckGo API"]
+async fn test_real_search_special_chars() {
+    let client = DdgClient::new(real_config()).unwrap();
+    let results = client.search("C++ programming").await;
+    assert!(results.is_ok(), "Special characters should be URL-encoded");
+}
+
+/// Network test — run with: cargo test -- --ignored
+#[tokio::test]
+#[ignore = "hits real DuckDuckGo API"]
+async fn test_real_search_result_count_limited() {
+    let config = DdgConfig {
+        max_results: 3,
+        ..real_config()
+    };
+    let client = DdgClient::new(config).unwrap();
+    let results = client.search("rust").await.unwrap();
+    assert!(results.len() <= 5, "Should not exceed MAX_RESULTS");
 }

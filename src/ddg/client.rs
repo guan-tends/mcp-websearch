@@ -36,19 +36,19 @@ impl DdgClient {
     /// Returns up to MAX_RESULTS (5) search results
     pub async fn search(&self, query: &str) -> Result<Vec<SearchResult>, WebSearchError> {
         let encoded = encode_url_query_component(query);
-        let url = format!("https://lite.duckduckgo.com/lite/?q={}", encoded);
+        let url = format!("{}?q={}", self.config.base_url, encoded);
 
         let response = self.http_client.get(&url).send().await?;
 
         // Check for non-200 status
         if !response.status().is_success() {
-            return Err(WebSearchError::Http(reqwest::Error::from(
+            return Err(WebSearchError::Http(
                 response.error_for_status().unwrap_err(),
-            )));
+            ));
         }
 
         let html = response.text().await?;
-        let results = parse_results(&html, &self.regex)?;
+        let results = parse_results(&html, &self.regex, self.config.max_results)?;
 
         Ok(results)
     }
@@ -64,6 +64,7 @@ mod tests {
             timeout: 15,
             max_results: 5,
             user_agent: "Test".to_string(),
+            base_url: "https://lite.duckduckgo.com/lite/".to_string(),
         };
 
         let client = DdgClient::new(config);

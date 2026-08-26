@@ -68,7 +68,7 @@ impl McpTestClient {
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .status()
             .await?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to build MCP server");
         }
@@ -131,12 +131,13 @@ impl McpTestClient {
     /// Receive a message from the server
     async fn receive(&mut self) -> anyhow::Result<McpMessage> {
         let mut line = String::new();
-        
+
         // Use tokio's async read_line with timeout
         let result = timeout(Duration::from_secs(5), async {
             self.reader.read_line(&mut line)?;
             Ok::<_, anyhow::Error>(line)
-        }).await;
+        })
+        .await;
 
         match result {
             Ok(Ok(line)) => {
@@ -166,7 +167,8 @@ impl McpTestClient {
         }
 
         // Send initialized notification
-        self.notification("notifications/initialized", serde_json::json!({})).await?;
+        self.notification("notifications/initialized", serde_json::json!({}))
+            .await?;
 
         Ok(())
     }

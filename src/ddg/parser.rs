@@ -6,7 +6,12 @@
 use crate::error::ParseError;
 use regex::Regex;
 
-/// Maximum results to return (from Kotlin: MAX_RESULTS = 5)
+/// Default maximum results to return.
+///
+/// Used as the default value for `DdgConfig.max_results` and as a
+/// reference constant in tests. The actual limit at runtime is
+/// determined by the `max_results` parameter passed to `parse_results`.
+#[allow(dead_code)]
 pub const MAX_RESULTS: usize = 5;
 
 /// Regex patterns (exact from Kotlin WebSearchTool.kt)
@@ -22,8 +27,6 @@ pub struct DdgRegex {
     pub full_link_regex: Regex,
     /// `uddg=([^&]+)`
     pub uddg_regex: Regex,
-    /// `<[^>]*>`
-    pub html_tag_regex: Regex,
 }
 
 impl Default for DdgRegex {
@@ -38,13 +41,12 @@ impl Default for DdgRegex {
             .unwrap(),
             full_link_regex: Regex::new(r#"<a\s[^>]*class=['"]result-link['"][^>]*>"#).unwrap(),
             uddg_regex: Regex::new(r#"uddg=([^&]+)"#).unwrap(),
-            html_tag_regex: Regex::new(r#"<[^>]*>"#).unwrap(),
         }
     }
 }
 
 /// Single search result
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SearchResult {
     pub title: String,
     pub url: String,
@@ -59,7 +61,11 @@ pub struct SearchResult {
 /// 3. Extract href, title, snippet
 /// 4. Strip HTML, decode URLs, filter empty
 /// 5. Cap at MAX_RESULTS
-pub fn parse_results(html: &str, regex: &DdgRegex) -> Result<Vec<SearchResult>, ParseError> {
+pub fn parse_results(
+    html: &str,
+    regex: &DdgRegex,
+    max_results: usize,
+) -> Result<Vec<SearchResult>, ParseError> {
     let mut results = Vec::new();
 
     // Find all matches (like Kotlin's findAll)
@@ -69,7 +75,7 @@ pub fn parse_results(html: &str, regex: &DdgRegex) -> Result<Vec<SearchResult>, 
 
     // Iterate by index alignment (fragile but matches Kotlin behavior)
     for i in 0..links.len() {
-        if results.len() >= MAX_RESULTS {
+        if results.len() >= max_results {
             break;
         }
 
@@ -97,7 +103,8 @@ pub fn parse_results(html: &str, regex: &DdgRegex) -> Result<Vec<SearchResult>, 
             .map(|m| m.as_str())
             .unwrap_or("")
             .strip_html()
-            .trim();
+            .trim()
+            .to_string();
         if title.is_empty() {
             continue;
         }
@@ -109,16 +116,17 @@ pub fn parse_results(html: &str, regex: &DdgRegex) -> Result<Vec<SearchResult>, 
             .map(|m| m.as_str())
             .unwrap_or("")
             .strip_html()
-            .trim();
+            .trim()
+            .to_string();
 
         // Extract actual URL from DDG redirect
         let url = extract_url_from_redirect(href)?;
 
         if !url.is_empty() && !title.is_empty() {
             results.push(SearchResult {
-                title: title.to_string(),
+                title,
                 url,
-                snippet: snippet.to_string(),
+                snippet,
             });
         }
     }
@@ -129,8 +137,13 @@ pub fn parse_results(html: &str, regex: &DdgRegex) -> Result<Vec<SearchResult>, 
 /// Extract actual URL from DDG redirect wrapper
 ///
 /// DDG format: `//duckduckgo.com/l/?uddg=ENCODED_URL`
-fn extract_url_from_redirect(href: &str) -> Result<String, ParseError> {
-    let regex = DdgRegex::default();
+/// Extract actual URL from DDG redirect wrapper.
+///
+/// DDG format: `//duckduckgo.com/l/?uddg=ENCODED_URL`.
+/// Uses a cached regex to avoid recompilation on every call.
+pub fn extract_url_from_redirect(href: &str) -> Result<String, ParseError> {
+    static RE: std::sync::OnceLock<DdgRegex> = std::sync::OnceLock::new();
+    let regex = RE.get_or_init(DdgRegex::default);
 
     // Try to extract uddg parameter
     if let Some(cap) = regex.uddg_regex.captures(href) {
@@ -139,8 +152,8 @@ fn extract_url_from_redirect(href: &str) -> Result<String, ParseError> {
         }
     }
 
-    // Not a redirect - use as-is
-    // Handle protocol-relative URLs (//example.com)
+    // Not a redirect — use as-is.
+    // Handle protocol-relative URLs (//example.com).
     if href.starts_with("//") {
         return Ok(format!("https:{}", href));
     }
@@ -181,7 +194,7 @@ pub fn decode_url_component(encoded: &str) -> Result<String, ParseError> {
     }
 
     // **THE FIX**: Decode entire byte sequence as UTF-8
-    String::from_utf8(bytes).map_err(|e| ParseError::InvalidUtf8(e))
+    String::from_utf8(bytes).map_err(ParseError::InvalidUtf8)
 }
 
 /// Encode URL query component (RFC 3986 + space->+)
@@ -216,51 +229,33 @@ pub fn encode_url_query_component(query: &str) -> String {
 /// Strip HTML tags and decode common entities
 ///
 /// Ported from Kotlin: 7 specific entity replacements
-trait StripHtml {
+pub trait StripHtml {
     fn strip_html(&self) -> String;
 }
 
 impl StripHtml for str {
     fn strip_html(&self) -> String {
-        let regex = DdgRegex::default();
+        static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+        let tag_regex = RE.get_or_init(|| Regex::new(r"<[^>]*>").unwrap());
 
         // Remove all HTML tags
-        let no_tags = regex.html_tag_regex.replace_all(self, "");
+        let no_tags = tag_regex.replace_all(self, "");
 
-        // Replace 7 specific entities (in order, like Kotlin)
-        let result = no_tags
+        // Replace 7 specific entities (in order, matching the original Kotlin implementation)
+        no_tags
             .replace("&amp;", "&")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
             .replace("&quot;", "\"")
             .replace("&#x27;", "'")
             .replace("&#39;", "'")
-            .replace("&nbsp;", " ");
-
-        result
+            .replace("&nbsp;", " ")
     }
 }
 
 impl StripHtml for String {
     fn strip_html(&self) -> String {
         self.as_str().strip_html()
-    }
-}
-
-/// Trim helper
-trait Trim {
-    fn trim(&self) -> String;
-}
-
-impl Trim for str {
-    fn trim(&self) -> String {
-        self[..].trim().to_string()
-    }
-}
-
-impl Trim for String {
-    fn trim(&self) -> String {
-        self[..].trim().to_string()
     }
 }
 

@@ -2,9 +2,8 @@
 //!
 //! Tool handler, MCP protocol integration, response formatting
 
+use mcp_websearch::config::DdgConfig;
 use mcp_websearch::tools::WebSearchTool;
-use mcp_websearch::ddg::parser::DdgConfig;
-use mcp_websearch::config::DdgConfig as ConfigDdg;
 
 /// Create test DDG config
 fn test_ddg_config() -> DdgConfig {
@@ -12,6 +11,7 @@ fn test_ddg_config() -> DdgConfig {
         timeout: 15,
         max_results: 5,
         user_agent: "Test/1.0".to_string(),
+        base_url: "https://lite.duckduckgo.com/lite/".to_string(),
     }
 }
 
@@ -30,6 +30,7 @@ async fn test_websearch_tool_creation_with_custom_config() {
         timeout: 30,
         max_results: 10,
         user_agent: "CustomAgent/2.0".to_string(),
+        base_url: "https://lite.duckduckgo.com/lite/".to_string(),
     };
     let tool = WebSearchTool::new(config);
     assert!(tool.is_ok());
@@ -50,7 +51,7 @@ fn test_web_search_tool_schema() {
 async fn test_search_validates_empty_query() {
     // Note: Actual test would require calling the tool through MCP protocol
     // This documents expected behavior: empty query should return error response
-    
+
     // Expected: Call with empty query returns CallToolResult with is_error=true
     // and error message about query being required
 }
@@ -66,11 +67,11 @@ async fn test_search_validates_whitespace_query() {
 #[tokio::test]
 async fn test_search_returns_results() {
     let config = test_ddg_config();
-    let tool = WebSearchTool::new(config).unwrap();
-    
+    let _tool = WebSearchTool::new(config).unwrap();
+
     // Note: This is an integration-style test using real DDG
     // For unit testing, we'd need to inject a mock DDG client
-    
+
     // Expected: Returns CallToolResult with:
     // - success=true
     // - results array with title, url, snippet
@@ -93,7 +94,7 @@ fn test_success_response_structure() {
         ],
         "message": "Found 1 results"
     });
-    
+
     // Verify structure is valid JSON
     let _json_string = serde_json::to_string(&expected).unwrap();
 }
@@ -105,7 +106,7 @@ fn test_error_response_structure() {
         "success": false,
         "error": "Search failed: Some error message"
     });
-    
+
     // Verify structure is valid JSON
     let _json_string = serde_json::to_string(&expected).unwrap();
 }
@@ -115,33 +116,33 @@ fn test_error_response_structure() {
 #[test]
 fn test_call_tool_result_success_construction() {
     use rmcp::model::{CallToolResult, Content};
-    
+
     let response_json = serde_json::json!({
         "success": true,
         "results": [],
         "message": "Found 0 results"
     });
-    
+
     let content = Content::text(response_json.to_string());
     let result = CallToolResult::success(vec![content]);
-    
-    assert!(!result.is_error);
+
+    assert_eq!(result.is_error, Some(false));
     assert_eq!(result.content.len(), 1);
 }
 
 #[test]
 fn test_call_tool_result_error_construction() {
     use rmcp::model::{CallToolResult, Content};
-    
+
     let response_json = serde_json::json!({
         "success": false,
         "error": "Something went wrong"
     });
-    
+
     let content = Content::text(response_json.to_string());
     let result = CallToolResult::error(vec![content]);
-    
-    assert!(result.is_error);
+
+    assert_eq!(result.is_error, Some(true));
     assert_eq!(result.content.len(), 1);
 }
 
@@ -158,13 +159,13 @@ fn test_tool_router_includes_web_search() {
 #[test]
 fn test_search_result_serialization() {
     use mcp_websearch::ddg::SearchResult;
-    
+
     let result = SearchResult {
         title: "Test Title".to_string(),
         url: "https://example.com".to_string(),
         snippet: "Test snippet".to_string(),
     };
-    
+
     let json = serde_json::to_string(&result).unwrap();
     assert!(json.contains("Test Title"));
     assert!(json.contains("https://example.com"));
@@ -174,10 +175,10 @@ fn test_search_result_serialization() {
 #[test]
 fn test_search_result_deserialization() {
     use mcp_websearch::ddg::SearchResult;
-    
+
     let json = r#"{"title":"Test","url":"https://example.com","snippet":"Desc"}"#;
     let result: SearchResult = serde_json::from_str(json).unwrap();
-    
+
     assert_eq!(result.title, "Test");
     assert_eq!(result.url, "https://example.com");
     assert_eq!(result.snippet, "Desc");
@@ -200,7 +201,7 @@ fn test_web_search_response_contains_expected_fields() {
         "message": "Found 1 results",
         "error": null
     });
-    
+
     // Verify all expected fields present
     assert!(response.get("success").is_some());
     assert!(response.get("results").is_some());

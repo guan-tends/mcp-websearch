@@ -5,14 +5,8 @@
 use clap::Parser;
 use tracing::info;
 
-mod config;
-mod ddg;
-mod error;
-mod tools;
-mod transport;
-
-use config::{CliArgs, Config, TransportMode};
-use tools::WebSearchTool;
+use mcp_websearch::config::{CliArgs, Config, TransportMode};
+use mcp_websearch::tools::WebSearchTool;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -37,11 +31,11 @@ async fn main() -> anyhow::Result<()> {
     match config.transport.mode.as_str() {
         "stdio" => {
             // No logging in stdio mode - stdout is for MCP protocol only
-            transport::stdio::serve(handler, config).await?;
+            mcp_websearch::transport::stdio::serve(handler, config).await?;
         }
         "http" => {
             info!("Using HTTP transport");
-            transport::http::serve(handler, config).await?;
+            mcp_websearch::transport::http::serve(handler, config).await?;
         }
         _ => {
             anyhow::bail!("Unknown transport mode: {}", config.transport.mode);
