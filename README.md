@@ -233,3 +233,7 @@ If this project is useful to you, consider supporting development:
 
 - Built with [rmcp](https://github.com/modelcontextprotocol/rust-sdk)
 - Powered by DuckDuckGo's privacy-first search
+
+---
+
+Crafted with ❤️ by [Sage Labs](https://sagelabs.dev)
