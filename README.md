@@ -1,6 +1,6 @@
 # MCP WebSearch Server
 
-[![CI](https://img.shields.io/github/actions/workflow/status/guan-tends/mcp-websearch/ci.yml?branch=main&label=CI&logo=github)](https://github.com/guan-tends/mcp-websearch/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/guan-tends/mcp-websearch/ci.yml?branch=main&label=CI&logo=github)](https://github.com/sagelabs-dev/mcp-websearch/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg?logo=rust)](https://www.rust-lang.org)
 
@@ -25,7 +25,7 @@ cargo install mcp-websearch
 ### From Source
 
 ```bash
-git clone https://github.com/guan-tends/mcp-websearch.git
+git clone https://github.com/sagelabs-dev/mcp-websearch.git
 cd mcp-websearch
 cargo build --release
 ```

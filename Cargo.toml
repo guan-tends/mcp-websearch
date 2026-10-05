@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["David Newman & Guan"]
 description = "MCP WebSearch server — DuckDuckGo Lite search tool for the Model Context Protocol"
 license = "MIT"
-repository = "https://github.com/guan-tends/mcp-websearch"
+repository = "https://github.com/sagelabs-dev/mcp-websearch"
 rust-version = "1.85"
 
 [lib]
