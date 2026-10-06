@@ -17,9 +17,15 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           git clone --depth 1 "http://guan:${{ github.token }}@gitea:3000/guan/mcp-websearch.git" .repo
+      - name: Add rustfmt
+        working-directory: .repo
+        run: rustup component add rustfmt
       - name: Format check
         working-directory: .repo
         run: cargo fmt --check
+      - name: Add clippy + rustfmt
+        working-directory: .repo
+        run: rustup component add clippy rustfmt
       - name: Clippy
         working-directory: .repo
         run: cargo clippy -- -D warnings
