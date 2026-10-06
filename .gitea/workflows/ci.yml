@@ -1,70 +1,28 @@
-name: CI
-
+name: Gitea CI
+# Gitea-native CI. Runner labels: self-hosted,linux,docker.
+# Clones over the internal gitea:3000 hostname (no LAN IP in this file).
 on:
   push:
-    branches: [ main, develop ]
+    branches: [develop]
   pull_request:
-    branches: [ main, develop ]
-
-env:
-  CARGO_TERM_COLOR: always
-
+    branches: [develop]
+  workflow_dispatch:
 jobs:
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
+  ci:
+    runs-on: self-hosted
+    container:
+      image: rust:latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-features -- -D warnings
-
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features --verbose
-
-  build:
-    name: Build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --verbose
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@cargo-tarpaulin
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo tarpaulin --all-features --out Xml
-      - uses: codecov/codecov-action@v3
-        with:
-          files: cobertura.xml
-          fail_ci_if_error: false
+      - name: Checkout
+        run: |
+          git config --global --add safe.directory '*'
+          git clone --depth 1 "http://guan:${{ github.token }}@gitea:3000/guan/mcp-websearch.git" .repo
+      - name: Format check
+        working-directory: .repo
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: .repo
+        run: cargo clippy -- -D warnings
+      - name: Test
+        working-directory: .repo
+        run: cargo test
